@@ -7,8 +7,17 @@ import (
 	_ "github.com/lib/pq"
 )
 
+type User struct {
+	Id       int
+	Username string
+}
+
 type UserInfo struct {
 	Username               string
+	Followers              []User
+	Following              []User
+	NumberOfFollowers      int
+	NumberOfFollowing      int
 	NumberOfQuestionsAsked int
 	NumberOfLikesReceived  int
 	RecentThreads          []Thread
@@ -97,6 +106,21 @@ func GetUserInfoByID(db *sql.DB, userid int) (UserInfo, error) {
 		}
 	}
 
+	followers, err4 := GetFollowers(db, userid)
+	if err4 != nil {
+		panic(err4)
+	}
+
+	following, err5 := GetFollowings(db, userid)
+	if err5 != nil {
+		panic(err5)
+	}
+
+	userInfo.Followers = followers
+	userInfo.Following = following
+	userInfo.NumberOfFollowers = len(followers)
+	userInfo.NumberOfFollowing = len(following)
+
 	return userInfo, nil
 }
 
@@ -127,7 +151,7 @@ func getUserId(db *sql.DB) int {
 }
 
 func IsEmailAvailable(db *sql.DB, email string) bool {
-	rows, _ := db.Query("SELECT email FROM Users WHERE email = $1", email)
+	rows, _ := db.Query("SELECT email FROM Users WHERE LOWER(email) = LOWER($1);", email)
 	for rows.Next() {
 		return false
 	}
@@ -135,7 +159,7 @@ func IsEmailAvailable(db *sql.DB, email string) bool {
 }
 
 func IsUsernameAvailable(db *sql.DB, username string) bool {
-	rows, _ := db.Query("SELECT username FROM Users WHERE username = $1", username)
+	rows, _ := db.Query("SELECT username FROM Users WHERE LOWER(username) = LOWER($1)", username)
 	for rows.Next() {
 		return false
 	}
@@ -177,7 +201,7 @@ func getUserIdFromNameOrEmail(db *sql.DB, nameOrEmail string) (int, error) {
 	sql_statement := `
 	SELECT u.id
 	FROM Users u
-	WHERE u.username = $1 OR u.email = $1
+	WHERE LOWER(u.username) = LOWER($1) OR LOWER(u.email) = LOWER($1);
 	`
 	rows, err := db.Query(sql_statement, nameOrEmail)
 	if err != nil {
@@ -202,4 +226,23 @@ func getUserIdFromNameOrEmail(db *sql.DB, nameOrEmail string) (int, error) {
 	}
 
 	return userid, nil
+}
+
+func ChangeUsername(db *sql.DB, userid int, newUsername string) error {
+	sql_statement := `
+	UPDATE Users
+	SET username = $1
+	WHERE id = $2
+	`
+
+	if !IsUsernameAvailable(db, newUsername) {
+		return errors.New("Username already exists!")
+	}
+
+	_, err := db.Exec(sql_statement, newUsername, userid)
+	if err != nil {
+		panic(err)
+	}
+
+	return nil
 }
